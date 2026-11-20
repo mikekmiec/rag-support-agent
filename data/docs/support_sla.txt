@@ -1,0 +1,33 @@
+Nimbus Cloud Storage Support SLA
+
+Support response times vary by plan tier. Starter plan customers receive
+standard email support with a target first-response time of 24 hours during
+business days. Team plan customers receive priority support with a target
+first-response time of 4 hours, 7 days a week, and gain access to live chat
+during business hours in addition to email.
+
+Enterprise customers receive a guaranteed first-response SLA of 1 hour for
+issues classified as Critical (complete service outage or data loss risk),
+4 hours for High severity issues (major feature broken, no workaround), and
+1 business day for Normal severity issues (minor bugs, general questions).
+Enterprise support is available 24/7/365 via phone, email, and a dedicated
+Slack Connect channel with the customer's assigned account team.
+
+If Nimbus fails to meet the Enterprise first-response SLA for a Critical
+issue, the customer is automatically credited 5% of their monthly contract
+value for that billing cycle, up to a maximum credit of 30% in any single
+month. SLA credits are applied automatically to the next invoice and do not
+require the customer to file a claim, though customers can view SLA
+compliance history in the Enterprise admin console.
+
+Nimbus's platform status page publishes real-time uptime data and incident
+history for all core services, including the API, file upload/download
+pipeline, and web dashboard. Enterprise customers can subscribe to
+proactive incident notifications via email, SMS, or a webhook that fires
+whenever an incident is opened, updated, or resolved on the status page.
+
+Feature requests and non-urgent product feedback should be submitted
+through the community forum rather than the support SLA channels, since
+the SLA is reserved for issues affecting the customer's ability to use the
+service. The product team reviews forum feedback monthly but does not
+guarantee a response timeline for feature requests.

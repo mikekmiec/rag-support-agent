@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "ruff>=0.8.0"
+      - run: ruff check .
+      - run: ruff format --check .
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - name: Unit tests
+        run: python -m pytest
+      # Retrieval-quality regression gate on the dependency-free backend.
+      # No API calls: a change that hurts retrieval fails the build.
+      - name: Retrieval eval (TF-IDF)
+        run: python -m evals.retrieval_eval --backends tfidf --no-rerank --min-hit-at-3 0.85
+
+  retrieval-eval-embeddings:
+    # Same gate for local embeddings + cross-encoder reranking. CPU-only
+    # PyTorch keeps the install small; Hugging Face models are cached.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements.txt "sentence-transformers>=3.0.0"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-models-v1
+      - name: Retrieval eval (local embeddings, with and without reranking)
+        run: python -m evals.retrieval_eval --backends local --min-hit-at-3 0.90

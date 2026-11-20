@@ -1,0 +1,34 @@
+Nimbus Cloud Storage Security
+
+All files stored in Nimbus are encrypted at rest using AES-256, and all data
+in transit between the client and Nimbus servers is encrypted using TLS 1.3.
+Encryption keys are managed by Nimbus's internal key management service and
+are rotated automatically every 90 days. Customers on the Enterprise plan can
+opt into bringing their own encryption keys through the customer-managed key
+feature.
+
+Account login is protected by a failed-attempt lockout policy. After 5
+consecutive failed login attempts, an account is locked for 30 minutes. The
+lockout timer resets after a successful login. During a lockout, the account
+owner receives an email notification with a link to reset their password
+immediately, which also clears the lockout early. This policy applies to all
+plans and cannot be disabled, even on Enterprise accounts.
+
+Two-factor authentication (2FA) is available on all plans and is strongly
+recommended. 2FA can be configured using an authenticator app (TOTP) or SMS,
+though SMS-based 2FA is being deprecated and will be removed in a future
+release. Enterprise customers can enforce mandatory 2FA for all users in
+their organization through the admin console, and can also configure single
+sign-on (SSO) via SAML 2.0 with providers such as Okta and Azure AD.
+
+Nimbus undergoes an annual third-party security audit and maintains SOC 2
+Type II compliance. Audit reports are available to Team and Enterprise
+customers upon request through the account's designated security contact.
+Nimbus does not sell customer data to third parties and does not use
+customer file contents to train any machine learning models.
+
+Suspicious login activity, such as a login from a new country or device,
+triggers an automatic email alert to the account owner. Enterprise admins
+can additionally configure IP allowlisting to restrict account access to a
+specific set of corporate network ranges, and can view a full audit log of
+every login and file access event for the past 12 months.

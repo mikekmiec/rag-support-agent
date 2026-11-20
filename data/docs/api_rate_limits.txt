@@ -1,0 +1,36 @@
+Nimbus Cloud Storage API Rate Limits
+
+The Nimbus REST API enforces rate limits per API key to keep the service
+fair and stable for all customers. The file upload endpoint
+(POST /v1/files) is limited to 100 requests per minute per API key, with a
+burst allowance of up to 20 additional requests in a single second before
+throttling kicks in. The file download endpoint (GET /v1/files/:id) has a
+higher limit of 300 requests per minute, since downloads are typically read
+heavy.
+
+Metadata endpoints, such as listing files or checking storage usage, are
+limited to 600 requests per minute per API key. The search endpoint
+(POST /v1/search) is more expensive to serve and is limited to 30 requests
+per minute. These limits apply per API key, not per account, so an account
+with multiple API keys effectively gets a higher aggregate limit by
+distributing traffic across keys.
+
+When a client exceeds its rate limit, the API responds with HTTP status code
+429 (Too Many Requests) and includes a Retry-After header indicating the
+number of seconds to wait before retrying. Clients are expected to implement
+exponential backoff with jitter when they encounter 429 responses rather
+than retrying immediately, since immediate retries during a rate-limited
+window will simply be rejected again and can extend the throttling period.
+
+Enterprise plan customers can request a custom rate limit increase by
+contacting their account manager; increases are typically provisioned
+within 2 business days. Rate limit status can be checked proactively via
+the response headers on any successful API call, which include
+X-RateLimit-Limit, X-RateLimit-Remaining, and X-RateLimit-Reset.
+
+Batch operations, such as uploading multiple files in a single request
+using the /v1/files/batch endpoint, count as a single request against the
+rate limit regardless of how many files are included, up to a maximum of
+50 files per batch. This makes batching the recommended approach for
+bulk-upload workloads that would otherwise be constrained by the standard
+upload endpoint's per-minute limit.

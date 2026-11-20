@@ -1,0 +1,24 @@
+# Extra deps for the non-default indexing backends (rag/backends.py) and
+# for reranking (rag/rerank.py). The base requirements.txt is enough for
+# RAG_BACKEND=tfidf with no reranking (the default). Install only what you
+# plan to use:
+#
+#   pip install -r requirements-optional.txt          # everything
+#   pip install sentence-transformers                 # RAG_BACKEND=local and/or RAG_RERANK=1
+#   pip install voyageai                               # RAG_BACKEND=voyage only
+
+# RAG_BACKEND=local (local neural embeddings) AND RAG_RERANK=1 (cross-encoder
+# reranking) both depend on this — it's the one package needed for either.
+# Pulls in PyTorch: a sizable download (roughly a few hundred MB to ~2GB
+# depending on platform/CPU vs GPU build).
+sentence-transformers>=3.0.0
+
+# RAG_BACKEND=voyage — Voyage AI hosted embeddings. Needs VOYAGE_API_KEY
+# from https://voyage.ai in the environment to actually run.
+voyageai>=0.3.0
+
+# index_dense.py, index_voyage.py, and rerank.py all import numpy directly
+# for cosine similarity / sigmoid. scikit-learn (in requirements.txt)
+# already pulls it in transitively, but it's listed explicitly here since
+# these modules depend on it directly, not just through TfidfIndex.
+numpy>=1.24.0

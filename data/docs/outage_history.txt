@@ -1,0 +1,34 @@
+Nimbus Cloud Storage Outage History
+
+On March 14th, Nimbus experienced a 47 minute outage affecting file uploads
+and downloads for all customers in the US-East region. The root cause was
+identified as a misconfigured database failover: a scheduled maintenance
+task triggered an automatic failover to a replica database that had not yet
+finished syncing recent writes, causing a spike in query errors. The
+incident was resolved by manually failing back to the primary database and
+pausing automated failover triggers until the replica sync process was
+fixed. A postmortem was published on the status page within 5 business
+days, as required by the Enterprise SLA for Critical incidents.
+
+On July 2nd, a shorter outage of 12 minutes affected only the search
+endpoint. The cause was an unoptimized index rebuild job that consumed
+excessive memory on the search cluster, causing several nodes to crash
+simultaneously. Search functionality degraded to returning stale results
+for roughly 20 minutes after the initial crash while the cluster recovered,
+though file upload and download were unaffected throughout the incident.
+
+On September 30th, a configuration change intended to tighten rate limiting
+was accidentally deployed with limits set 10 times stricter than intended,
+causing widespread 429 errors for API customers for approximately 18
+minutes before the change was rolled back. This incident led to the
+introduction of a mandatory staged rollout process for all rate limit
+configuration changes, where new limits are first applied to 1% of traffic
+and monitored for 15 minutes before wider deployment.
+
+Following the March incident, Nimbus invested in additional failover
+testing infrastructure and now runs automated failover drills monthly in a
+staging environment that mirrors production traffic patterns. No Critical
+severity incidents have occurred since the September 30th event. Full
+incident postmortems, including timelines and remediation steps, remain
+publicly available on the Nimbus status page for 18 months after
+resolution.

@@ -1,0 +1,37 @@
+[project]
+name = "rag-test"
+version = "0.1.0"
+description = "A from-scratch RAG pipeline and tool-using support agent on Claude, with an eval harness."
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning", "ignore::PendingDeprecationWarning"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = [".venv"]
+
+[tool.ruff.lint]
+# pyflakes, pycodestyle errors, import sorting, bugbear, pyupgrade
+select = ["F", "E", "I", "B", "UP"]
+
+# The VS Code Pylint extension reads this. Ruff is the linter CI enforces;
+# these settings keep Pylint's editor hints consistent with it.
+[tool.pylint.format]
+max-line-length = 100
+
+[tool.pylint."messages control"]
+disable = [
+    "missing-module-docstring",
+    "missing-class-docstring",
+    "missing-function-docstring",
+    "too-few-public-methods",      # Protocol-shaped classes with one method, by design
+    "too-many-instance-attributes", # result dataclasses
+    "too-many-locals",
+    "too-many-arguments",
+    "too-many-positional-arguments",
+    "import-outside-toplevel",      # lazy imports keep torch/voyageai optional
+    "broad-exception-caught",       # best-effort backend probing in the eval scripts
+]

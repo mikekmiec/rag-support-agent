@@ -1,0 +1,36 @@
+Nimbus Cloud Storage Pricing
+
+Nimbus offers three plans: Starter, Team, and Enterprise. The Starter plan is
+$9 per month and includes 500GB of storage, 3 team seats, and standard
+support with a 24 hour response time. The Team plan is $29 per month and
+includes 2TB of storage, 15 team seats, priority support, and versioned file
+history going back 90 days. The Enterprise plan is custom-priced and includes
+unlimited storage, single sign-on, a dedicated account manager, and a
+guaranteed uptime SLA.
+
+Customers who pay annually instead of monthly receive a 20% discount on the
+Starter and Team plans. The discount is applied automatically at checkout
+when the annual billing option is selected and cannot be combined with other
+promotional codes. Enterprise contracts are negotiated individually and are
+not eligible for the standard annual discount, though volume discounts are
+available for commitments over 50 seats.
+
+Storage overage fees apply once a plan's included storage is exceeded.
+Starter and Team customers are billed $0.10 per additional GB per month,
+prorated daily. Overage charges appear as a separate line item on the
+following month's invoice. Customers can set a storage cap in account
+settings to prevent overage charges entirely; once the cap is reached,
+new uploads are rejected with an error until storage is freed up or the
+cap is raised.
+
+Refunds are issued only within the first 14 days of a new subscription and
+only for annual plans. Monthly plans can be canceled at any time from the
+billing page, and cancellation takes effect at the end of the current
+billing cycle. There are no early termination fees on any plan, including
+Enterprise contracts, provided 30 days written notice is given.
+
+All prices are listed in USD. Customers on annual plans are billed once per
+year on the anniversary of their signup date. A 7 day grace period applies
+after a failed payment before storage access is suspended, during which
+Nimbus will retry the charge and send email reminders to the account's
+billing contact.

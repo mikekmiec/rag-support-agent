@@ -1,0 +1,34 @@
+Nimbus Cloud Storage Data Retention and Deletion
+
+When a user deletes a file from Nimbus, the file is not immediately purged.
+Instead, it moves to a soft-delete state and remains recoverable from the
+account's Trash for 30 days. Files in the Trash count against the account's
+storage quota. After 30 days, files are automatically and permanently purged
+from Nimbus's storage systems and cannot be recovered by Nimbus support
+under any circumstances.
+
+If a customer cancels their subscription or deletes their entire account,
+all account data, including files, metadata, and activity logs, is retained
+in a soft-deleted state for 30 days in case the customer wants to reactivate
+the account. During this window, reactivation restores full access to all
+data exactly as it was at the time of deletion. After the 30 day window
+closes, all account data is permanently and irreversibly purged, including
+from backup systems, within an additional 7 days.
+
+Customers who want to preserve their data before deleting an account should
+use the account export tool, available from account settings, which
+packages all files and metadata into a downloadable archive. Exports are
+generated asynchronously and the customer is emailed a download link once
+the archive is ready, typically within a few hours for accounts under 1TB.
+
+Enterprise customers with regulatory retention requirements can configure
+a custom retention policy that extends the soft-delete window up to 365
+days, or, alternatively, a legal hold that prevents permanent deletion of
+specified files entirely until the hold is manually released by an
+authorized admin. Legal holds override the standard 30 day purge timeline
+and are logged in the account's audit trail.
+
+Backups of the storage system itself are retained separately from
+customer-facing Trash and are kept for disaster recovery purposes for 90
+days, but backup data is not accessible to customers or support staff for
+individual file recovery outside of the standard 30 day Trash window.

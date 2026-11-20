@@ -33,6 +33,11 @@ EFFORT = "medium"
 # no answer.
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
+# `fallbacks: "default"` lets the API pick the fallback model by refusal
+# category. The installed SDK only types the list form of `fallbacks`, so
+# the string form goes through extra_body, which is sent as-is.
+FALLBACK_BODY = {"fallbacks": "default"}
+
 REFUSAL_MESSAGE = "Sorry, I can't help with that request."
 
 SYSTEM_PROMPT = """You are a support assistant for Nimbus Cloud Storage.
@@ -80,7 +85,7 @@ def generate_answer(
         messages=[{"role": "user", "content": user_prompt}],
         output_config={"effort": EFFORT},
         betas=[FALLBACK_BETA],
-        fallbacks="default",
+        extra_body=FALLBACK_BODY,
     )
     # Check stop_reason before reading content: a refusal (from the whole
     # fallback chain) can come back with no text block at all.

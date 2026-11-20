@@ -56,6 +56,7 @@ Four required stages, plus one optional stage, one file each:
 | `rag/rerank.py`                                        | Reranking (optional, `RAG_RERANK=1`) | Cross-encoder rescoring of retrieved candidates for precision   |
 | `rag/generate.py`                                      | Augmentation + Generation            | Format retrieved chunks into the prompt, call Claude            |
 | `rag/pipeline.py`                                      | Wiring                               | Retrieve, rerank, apply cutoffs; shared by every entry point    |
+| `rag/agent.py`                                         | Agent (optional, `python agent.py`)  | Claude drives search, reading, and approved actions via tools   |
 
 ## Setup
 
@@ -73,6 +74,7 @@ dependencies — see [Retrieval backends](#retrieval-backends) below.
 ```bash
 python demo.py              # runs a fixed set of questions, non-interactive — start here
 python main.py               # interactive: ask your own questions about the corpus
+python agent.py              # tool-using agent: Claude decides when to search, and can open tickets
 python compare_backends.py   # retrieval-only, no Claude calls — compares all installed backends, with and without reranking
 ```
 
@@ -92,6 +94,57 @@ thresholds, rate limits, discount percentages) that a model can't guess —
 which is exactly what makes it easy to *tell* retrieval is working: try
 asking `demo.py`'s questions with the corpus deleted and watch the model
 have nothing to cite.
+
+## Support agent
+
+`python agent.py` runs the same corpus as an agent instead of a fixed
+pipeline. `main.py` always does exactly one retrieval and one answer. Here
+Claude gets three tools and decides how to use them:
+
+| Tool                    | What it does                                                          | Needs approval |
+| ----------------------- | --------------------------------------------------------------------- | -------------- |
+| `search_docs`           | Runs the RAG pipeline (same backend and reranking settings)           | No             |
+| `read_document`         | Returns one full document, for when an excerpt is cut off             | No             |
+| `create_support_ticket` | Opens a ticket (saved to `data/tickets.jsonl`, a stand-in for an API) | Yes            |
+
+The kind of session to expect (the exact tool calls vary from run to run):
+
+```text
+> Does the Team plan get faster support than Starter, and what does it cost?
+  -> search_docs({"query": "Team plan support response time"})
+  -> search_docs({"query": "Starter plan support response time"})
+  -> search_docs({"query": "Team plan price"})
+...
+> Is there a Linux desktop client?   -> searches, says the docs don't cover it, offers a ticket
+> yes please                          -> proposes a ticket, which you approve or decline
+```
+
+The loop in [`rag/agent.py`](rag/agent.py) is written out by hand rather
+than using the SDK's tool runner, so every orchestration concern is visible
+in one place:
+
+- **Approval before actions.** Tools that change state go through a
+  `confirm` callback, and the default policy denies everything. A declined
+  action goes back to the model as a normal tool result ("the customer
+  declined"), so it can adapt rather than fail. The system prompt also
+  tells the model to ask before opening a ticket, and the approval gate
+  enforces it either way.
+- **Step budget.** At most 8 model calls per user turn, so a confused model
+  can't loop forever.
+- **Errors are data.** An unknown tool, a bad argument, or an exception in
+  a tool becomes an `is_error` tool result the model can recover from.
+- **Strict tool schemas.** `strict: true` makes the API guarantee tool
+  inputs match the schema. `read_document`'s `source` is an enum of the
+  real document names.
+- **Prompt-injection hygiene.** Retrieved text is wrapped in
+  `<excerpt>`/`<document>` tags, and the system prompt says it's reference
+  material, not instructions.
+- **State and tracing.** History persists across turns, so a follow-up
+  like "yes, open a ticket" works. Each turn returns an `AgentTurn` trace
+  with every tool call (input, output, latency, approval) plus model calls,
+  tokens, and cost.
+
+`tests/test_agent.py` covers each of these with a scripted fake client.
 
 ## Evaluation
 
@@ -296,5 +349,10 @@ questions about docs that change weekly."
   done, see `rag/rerank.py` and `RAG_RERANK=1`.
 - Swap the in-memory matrix for a persistent vector DB so the index
   survives restarts and scales past what fits in memory.
-- Add citations validation: parse the `[source]` tags the model outputs
-  and verify each one was actually in the retrieved set.
+- ~~Add citations validation~~ — done, see `evals/answer_eval.py`.
+- Add an **agent eval**: scripted multi-turn scenarios graded on task
+  completion (did it open a ticket only when asked? did it search for every
+  part of a compound question?) plus step count and cost per task.
+- Add a **web UI**: a FastAPI backend that streams the agent's tool calls
+  and answer, and a React/TypeScript frontend that renders them, with an
+  approve/decline button for actions.

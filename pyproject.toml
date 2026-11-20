@@ -1,5 +1,5 @@
 [project]
-name = "rag-test"
+name = "rag-support-agent"
 version = "0.1.0"
 description = "A from-scratch RAG pipeline and tool-using support agent on Claude, with an eval harness."
 requires-python = ">=3.10"

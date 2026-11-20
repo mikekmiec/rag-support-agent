@@ -1,4 +1,6 @@
-# Simple RAG Example
+# RAG Support Agent
+
+[![CI](https://github.com/mikekmiec/rag-support-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/mikekmiec/rag-support-agent/actions/workflows/ci.yml)
 
 A minimal, from-scratch Retrieval-Augmented Generation pipeline: a toy
 support-doc corpus, three swappable retrieval backends (TF-IDF, local
@@ -56,12 +58,29 @@ Four required stages, plus one optional stage, one file each:
 | `rag/rerank.py`                                        | Reranking (optional, `RAG_RERANK=1`) | Cross-encoder rescoring of retrieved candidates for precision   |
 | `rag/generate.py`                                      | Augmentation + Generation            | Format retrieved chunks into the prompt, call Claude            |
 | `rag/pipeline.py`                                      | Wiring                               | Retrieve, rerank, apply cutoffs; shared by every entry point    |
+| `rag/agent.py`                                         | Agent (optional, `python agent.py`)  | Claude drives search, reading, and approved actions via tools   |
 
 ## Setup
 
 ```bash
-pip install -r requirements.txt
-export ANTHROPIC_API_KEY=your-key-here   # or `ant auth login`
+python -m venv .venv && source .venv/bin/activate
+pip install --require-hashes -r requirements.lock   # exact, hash-verified versions
+```
+
+`requirements.lock` pins every dependency, including transitive ones, with
+hashes, so you install exactly what CI tests. `pip install -r
+requirements.txt` also works if you'd rather take the latest compatible
+versions.
+
+**API key.** Bring your own: this repo contains no key, and nothing in it
+stores one. The scripts look for credentials in this order:
+`ANTHROPIC_API_KEY` in your environment, then an `ant auth login` profile,
+and otherwise they prompt for a key with hidden input and keep it in memory
+for that run only (see `rag/client.py`). Get a key at
+[console.anthropic.com](https://console.anthropic.com).
+
+```bash
+export ANTHROPIC_API_KEY=...   # in your shell, never in a file in this repo
 ```
 
 That's enough for the default backend (TF-IDF) with no reranking. The two
@@ -73,6 +92,7 @@ dependencies — see [Retrieval backends](#retrieval-backends) below.
 ```bash
 python demo.py              # runs a fixed set of questions, non-interactive — start here
 python main.py               # interactive: ask your own questions about the corpus
+python agent.py              # tool-using agent: Claude decides when to search, and can open tickets
 python compare_backends.py   # retrieval-only, no Claude calls — compares all installed backends, with and without reranking
 ```
 
@@ -93,6 +113,57 @@ which is exactly what makes it easy to *tell* retrieval is working: try
 asking `demo.py`'s questions with the corpus deleted and watch the model
 have nothing to cite.
 
+## Support agent
+
+`python agent.py` runs the same corpus as an agent instead of a fixed
+pipeline. `main.py` always does exactly one retrieval and one answer. Here
+Claude gets three tools and decides how to use them:
+
+| Tool                    | What it does                                                          | Needs approval |
+| ----------------------- | --------------------------------------------------------------------- | -------------- |
+| `search_docs`           | Runs the RAG pipeline (same backend and reranking settings)           | No             |
+| `read_document`         | Returns one full document, for when an excerpt is cut off             | No             |
+| `create_support_ticket` | Opens a ticket (saved to `data/tickets.jsonl`, a stand-in for an API) | Yes            |
+
+The kind of session to expect (the exact tool calls vary from run to run):
+
+```text
+> Does the Team plan get faster support than Starter, and what does it cost?
+  -> search_docs({"query": "Team plan support response time"})
+  -> search_docs({"query": "Starter plan support response time"})
+  -> search_docs({"query": "Team plan price"})
+...
+> Is there a Linux desktop client?   -> searches, says the docs don't cover it, offers a ticket
+> yes please                          -> proposes a ticket, which you approve or decline
+```
+
+The loop in [`rag/agent.py`](rag/agent.py) is written out by hand rather
+than using the SDK's tool runner, so every orchestration concern is visible
+in one place:
+
+- **Approval before actions.** Tools that change state go through a
+  `confirm` callback, and the default policy denies everything. A declined
+  action goes back to the model as a normal tool result ("the customer
+  declined"), so it can adapt rather than fail. The system prompt also
+  tells the model to ask before opening a ticket, and the approval gate
+  enforces it either way.
+- **Step budget.** At most 8 model calls per user turn, so a confused model
+  can't loop forever.
+- **Errors are data.** An unknown tool, a bad argument, or an exception in
+  a tool becomes an `is_error` tool result the model can recover from.
+- **Strict tool schemas.** `strict: true` makes the API guarantee tool
+  inputs match the schema. `read_document`'s `source` is an enum of the
+  real document names.
+- **Prompt-injection hygiene.** Retrieved text is wrapped in
+  `<excerpt>`/`<document>` tags, and the system prompt says it's reference
+  material, not instructions.
+- **State and tracing.** History persists across turns, so a follow-up
+  like "yes, open a ticket" works. Each turn returns an `AgentTurn` trace
+  with every tool call (input, output, latency, approval) plus model calls,
+  tokens, and cost.
+
+`tests/test_agent.py` covers each of these with a scripted fake client.
+
 ## Evaluation
 
 `evals/dataset.jsonl` holds 31 labeled questions: 25 answerable (factual
@@ -105,7 +176,15 @@ keeps the labels valid if you change the chunking.
 ```bash
 python -m evals.retrieval_eval    # free: retrieval only, every installed backend, +/- reranking
 python -m evals.answer_eval       # paid (~$0.80): full pipeline + LLM judge
-python -m pytest                  # unit tests (pip install -r requirements-dev.txt)
+python -m pytest                  # unit tests (pip install --require-hashes -r requirements-dev.lock)
+```
+
+After changing `requirements*.txt`, regenerate the lockfiles with
+[uv](https://docs.astral.sh/uv/):
+
+```bash
+uv pip compile requirements.txt --universal --python-version 3.10 --generate-hashes -o requirements.lock
+uv pip compile requirements-dev.txt --universal --python-version 3.10 --generate-hashes -o requirements-dev.lock
 ```
 
 **Retrieval** (`retrieval_eval`), measured on this corpus:
@@ -296,5 +375,10 @@ questions about docs that change weekly."
   done, see `rag/rerank.py` and `RAG_RERANK=1`.
 - Swap the in-memory matrix for a persistent vector DB so the index
   survives restarts and scales past what fits in memory.
-- Add citations validation: parse the `[source]` tags the model outputs
-  and verify each one was actually in the retrieved set.
+- ~~Add citations validation~~ — done, see `evals/answer_eval.py`.
+- Add an **agent eval**: scripted multi-turn scenarios graded on task
+  completion (did it open a ticket only when asked? did it search for every
+  part of a compound question?) plus step count and cost per task.
+- Add a **web UI**: a FastAPI backend that streams the agent's tool calls
+  and answer, and a React/TypeScript frontend that renders them, with an
+  approve/decline button for actions.

@@ -8,7 +8,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from rag.agent import SupportAgent, TicketStore, printable, tool_definitions
+from rag.agent import SupportAgent, TicketStore, tool_definitions
+from rag.display import printable
 from rag.generate import REFUSAL_MESSAGE
 from rag.index import TfidfIndex
 from rag.ingest import Chunk
@@ -249,3 +250,50 @@ def test_ticket_store_rejects_invalid_input(tmp_path, kwargs, error):
 def test_printable_strips_terminal_escapes_but_keeps_newlines():
     hidden = "Subject: refund\x1b[2K\x1b[1A\rSubject: harmless\nline two\t."
     assert printable(hidden) == "Subject: refund[2K[1ASubject: harmless\nline two\t."
+
+
+class FailingClient(ScriptedClient):
+    """Scripted responses, then raises on the next call."""
+
+    def _create(self, **kwargs):
+        if not self.responses:
+            raise RuntimeError("API unavailable")
+        return super()._create(**kwargs)
+
+
+def test_failed_turn_is_rolled_back_so_history_stays_valid(pipeline, tmp_path):
+    client = FailingClient(
+        response("end_turn", text("first answer")),
+        response("tool_use", tool_use("t1", "search_docs", query="x")),
+        # the call after the tool result fails
+    )
+    agent = make_agent(client, pipeline, tmp_path)
+    agent.ask("first question")
+    history_before = list(agent.messages)
+
+    with pytest.raises(RuntimeError):
+        agent.ask("second question")
+    assert agent.messages == history_before  # no dangling user msg or tool_use
+
+
+def test_tool_call_cut_off_by_max_tokens_gets_an_error_result(pipeline, tmp_path):
+    client = ScriptedClient(
+        response("max_tokens", text("Let me check"), tool_use("t1", "search_docs", query="x")),
+    )
+    agent = make_agent(client, pipeline, tmp_path)
+    turn = agent.ask("q")
+
+    assert "truncated" in turn.text
+    assert turn.tool_calls == []  # the cut-off call was not executed
+    last = agent.messages[-1]
+    assert last["role"] == "user"
+    assert last["content"][0]["tool_use_id"] == "t1"
+    assert last["content"][0]["is_error"] is True
+
+
+def test_requests_enable_prompt_caching_and_fallbacks(pipeline, tmp_path):
+    client = ScriptedClient(response("end_turn", text("ok")))
+    make_agent(client, pipeline, tmp_path).ask("q")
+    request = client.requests[0]
+    assert request["cache_control"] == {"type": "ephemeral"}
+    assert request["fallbacks"] == "default"

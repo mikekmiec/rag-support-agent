@@ -18,16 +18,18 @@ See rag/rerank.py for what it does and why it's a separate stage.
 
 from __future__ import annotations
 
-from anthropic import Anthropic
+import anthropic
 
+from rag.client import make_client
+from rag.display import printable
 from rag.generate import generate_answer
 from rag.pipeline import DOCS_DIR, build_pipeline
 
 
 def main() -> None:
     """Run an interactive question-answering loop over the corpus."""
+    client = make_client()  # the current user's own key; see rag/client.py
     pipeline = build_pipeline()
-    client = Anthropic()  # reads ANTHROPIC_API_KEY from the environment
 
     print(f"Backend: {pipeline.label}")
     print(f"Indexed {len(pipeline.index.chunks)} chunks from {DOCS_DIR}")
@@ -50,8 +52,12 @@ def main() -> None:
             preview = r.chunk.text[:70].replace("\n", " ")
             print(f"    [{r.score:.3f}] {r.chunk.source}: {preview}...")
 
-        answer = generate_answer(client, question, results)
-        print(f"\n{answer.text}\n")
+        try:
+            answer = generate_answer(client, question, results)
+        except anthropic.APIError as e:
+            print(f"\n  API error: {e}\n")
+            continue
+        print(f"\n{printable(answer.text)}\n")
 
 
 if __name__ == "__main__":

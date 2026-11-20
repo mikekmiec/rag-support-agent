@@ -61,3 +61,19 @@ def test_every_evidence_phrase_matches_a_real_chunk():
     # on every backend and look like a model problem.
     chunks = chunk_documents(load_documents(DOCS_DIR))
     assert check_labels(load_dataset(), chunks) == []
+
+
+def test_answer_eval_records_errors_without_aborting_or_skewing_rates():
+    from evals.answer_eval import run_one_safely, summarize
+
+    class BrokenPipeline:
+        def retrieve(self, query):
+            raise ConnectionError("network down")
+
+    item = load_dataset()[0]
+    errored = run_one_safely(client=None, pipeline=BrokenPipeline(), item=item)
+    assert errored.error == "ConnectionError: network down"
+
+    summary = summarize([errored])
+    assert summary["errors"] == 1
+    assert summary["accuracy"] == 0.0  # no successful rows, not a crash

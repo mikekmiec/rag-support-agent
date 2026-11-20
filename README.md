@@ -1,4 +1,6 @@
-# Simple RAG Example
+# RAG Support Agent
+
+[![CI](https://github.com/mikekmiec/rag-support-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/mikekmiec/rag-support-agent/actions/workflows/ci.yml)
 
 A minimal, from-scratch Retrieval-Augmented Generation pipeline: a toy
 support-doc corpus, three swappable retrieval backends (TF-IDF, local
@@ -61,8 +63,24 @@ Four required stages, plus one optional stage, one file each:
 ## Setup
 
 ```bash
-pip install -r requirements.txt
-export ANTHROPIC_API_KEY=your-key-here   # or `ant auth login`
+python -m venv .venv && source .venv/bin/activate
+pip install --require-hashes -r requirements.lock   # exact, hash-verified versions
+```
+
+`requirements.lock` pins every dependency, including transitive ones, with
+hashes, so you install exactly what CI tests. `pip install -r
+requirements.txt` also works if you'd rather take the latest compatible
+versions.
+
+**API key.** Bring your own: this repo contains no key, and nothing in it
+stores one. The scripts look for credentials in this order:
+`ANTHROPIC_API_KEY` in your environment, then an `ant auth login` profile,
+and otherwise they prompt for a key with hidden input and keep it in memory
+for that run only (see `rag/client.py`). Get a key at
+[console.anthropic.com](https://console.anthropic.com).
+
+```bash
+export ANTHROPIC_API_KEY=...   # in your shell, never in a file in this repo
 ```
 
 That's enough for the default backend (TF-IDF) with no reranking. The two
@@ -158,7 +176,15 @@ keeps the labels valid if you change the chunking.
 ```bash
 python -m evals.retrieval_eval    # free: retrieval only, every installed backend, +/- reranking
 python -m evals.answer_eval       # paid (~$0.80): full pipeline + LLM judge
-python -m pytest                  # unit tests (pip install -r requirements-dev.txt)
+python -m pytest                  # unit tests (pip install --require-hashes -r requirements-dev.lock)
+```
+
+After changing `requirements*.txt`, regenerate the lockfiles with
+[uv](https://docs.astral.sh/uv/):
+
+```bash
+uv pip compile requirements.txt --universal --python-version 3.10 --generate-hashes -o requirements.lock
+uv pip compile requirements-dev.txt --universal --python-version 3.10 --generate-hashes -o requirements-dev.lock
 ```
 
 **Retrieval** (`retrieval_eval`), measured on this corpus:

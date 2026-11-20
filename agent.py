@@ -18,9 +18,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from anthropic import Anthropic
+import anthropic
 
-from rag.agent import SupportAgent, TicketStore, ToolCall, printable
+from rag.agent import SupportAgent, TicketStore, ToolCall
+from rag.client import make_client
+from rag.display import printable
 from rag.ingest import load_documents
 from rag.pipeline import DOCS_DIR, build_pipeline
 
@@ -47,10 +49,11 @@ def confirm_action(call: ToolCall) -> bool:
 
 
 def main() -> None:
+    client = make_client()  # before building the index: fail fast without a key
     pipeline = build_pipeline()
     documents = {d.source: d.text for d in load_documents(DOCS_DIR)}
     agent = SupportAgent(
-        client=Anthropic(),
+        client=client,
         pipeline=pipeline,
         documents=documents,
         tickets=TicketStore(TICKETS_PATH),
@@ -68,7 +71,13 @@ def main() -> None:
             break
         if not question:
             continue
-        turn = agent.ask(question)
+        try:
+            turn = agent.ask(question)
+        except anthropic.APIError as e:
+            # The agent rolls back the failed turn, so the conversation can
+            # continue; ask again or try another question.
+            print(f"\n  API error, nothing was done: {e}\n")
+            continue
         print(f"\n{printable(turn.text)}\n")
         print(
             f"  [{turn.model_calls} model calls, {len(turn.tool_calls)} tool calls, "

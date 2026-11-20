@@ -14,8 +14,7 @@ For measured quality numbers rather than eyeballing answers, see evals/.
 
 from __future__ import annotations
 
-from anthropic import Anthropic
-
+from rag.client import make_client
 from rag.generate import generate_answer
 from rag.pipeline import build_pipeline
 
@@ -31,8 +30,8 @@ QUESTIONS = [
 
 def main() -> None:
     """Answer each demo question and print what was retrieved."""
+    client = make_client()  # before building the index: fail fast without a key
     pipeline = build_pipeline()
-    client = Anthropic()
 
     print(f"Backend: {pipeline.label}\n")
     for question in QUESTIONS:

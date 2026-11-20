@@ -62,6 +62,10 @@ DEFAULT_MODEL = "voyage-4"
 # transient throttles retry-and-recover instead of crashing the process.
 DEFAULT_MAX_RETRIES = 5
 
+# Voyage caps inputs (and total tokens) per embed request, so a corpus
+# bigger than this toy one has to be embedded in batches.
+EMBED_BATCH_SIZE = 128
+
 
 class VoyageIndex:
     """Same shape as TfidfIndex: fit chunks once, then `search(query, k)`."""
@@ -78,8 +82,13 @@ class VoyageIndex:
         self.model = model
         # reads VOYAGE_API_KEY from the environment
         self._client = voyageai.Client(max_retries=max_retries)
-        result = self._client.embed([c.text for c in chunks], model=model, input_type="document")
-        self.embeddings = np.array(result.embeddings)
+        texts = [c.text for c in chunks]
+        vectors: list[list[float]] = []
+        for i in range(0, len(texts), EMBED_BATCH_SIZE):
+            batch = texts[i : i + EMBED_BATCH_SIZE]
+            result = self._client.embed(batch, model=model, input_type="document")
+            vectors.extend(result.embeddings)
+        self.embeddings = np.array(vectors)
 
     def search(self, query: str, k: int = 3) -> list[SearchResult]:
         result = self._client.embed([query], model=self.model, input_type="query")

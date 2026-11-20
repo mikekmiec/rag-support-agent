@@ -152,6 +152,6 @@ def test_generate_flags_truncated_answers():
 
 def test_prompt_labels_each_chunk_with_its_source():
     prompt = build_user_prompt("q?", [make_result("p#0", 0.5, source="pricing")])
-    assert "[pricing] p#0" in prompt
+    assert '<excerpt source="pricing">\np#0\n</excerpt>' in prompt
     assert prompt.endswith("Question: q?")
     assert "no relevant context" in build_user_prompt("q?", [])

@@ -26,7 +26,6 @@ runner, so every orchestration concern is visible in one place:
 from __future__ import annotations
 
 import json
-import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -36,15 +35,13 @@ from typing import Any
 
 from anthropic import Anthropic
 
-from rag.generate import FALLBACK_BETA, FALLBACK_BODY, MODEL, REFUSAL_MESSAGE
+from rag.generate import FALLBACK_BETA, MODEL, REFUSAL_MESSAGE
 from rag.pipeline import RAGPipeline
+from rag.pricing import cost_usd
 
 MAX_TOKENS = 16000
 EFFORT = "medium"
 MAX_STEPS = 8
-
-# USD per million tokens (input, output), for the per-turn cost trace.
-PRICES = {"claude-opus-5-5": (4.00, 20.00), "claude-opus-4-8": (5.00, 25.00)}
 
 SYSTEM_PROMPT = """You are a support agent for Nimbus Cloud Storage. You \
 answer customer questions using the company's documentation, and you can \
@@ -153,19 +150,6 @@ SEVERITIES = ("low", "normal", "high", "critical")
 MAX_SUBJECT_CHARS = 200
 MAX_DESCRIPTION_CHARS = 5000
 
-_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
-
-
-def printable(text: str) -> str:
-    """Strip terminal control characters (keeping newlines and tabs).
-
-    Model output and tool inputs are untrusted text. An ANSI escape
-    sequence in them could clear the screen, recolor, or overwrite lines,
-    for example to hide part of a ticket in the approval prompt. Apply
-    this to anything printed to a terminal.
-    """
-    return _CONTROL_CHARS.sub("", text)
-
 
 class TicketStore:
     """Appends tickets to a JSONL file: a stand-in for a real ticketing API."""
@@ -270,14 +254,30 @@ class SupportAgent:
         alternate until the model answers, refuses, or hits the step limit."""
         start = time.perf_counter()
         turn = AgentTurn(text="")
+        snapshot = len(self.messages)
         self.messages.append({"role": "user", "content": user_text})
+        try:
+            self._run_turn(turn)
+        except BaseException:
+            # Roll back the failed turn (an API error, Ctrl+C mid-call) so
+            # the history never ends in a dangling user message or a tool
+            # call without a result, which would break every later request.
+            # Dropping a whole trailing turn keeps the earlier history, and
+            # its thinking blocks, intact.
+            del self.messages[snapshot:]
+            raise
+        turn.latency_ms = (time.perf_counter() - start) * 1000
+        return turn
 
+    def _run_turn(self, turn: AgentTurn) -> None:
         for _ in range(self.max_steps):
             response = self._call_model()
             turn.model_calls += 1
             turn.input_tokens += response.usage.input_tokens
             turn.output_tokens += response.usage.output_tokens
-            turn.cost_usd += _cost(response.model, response.usage)
+            turn.cost_usd += cost_usd(
+                response.model, response.usage.input_tokens, response.usage.output_tokens
+            )
             turn.stop_reason = response.stop_reason
             turn.served_by = response.model
 
@@ -302,8 +302,28 @@ class SupportAgent:
                 continue
             if response.stop_reason == "refusal":
                 turn.text = REFUSAL_MESSAGE
-            else:
-                turn.text = "".join(b.text for b in response.content if b.type == "text")
+                break
+            turn.text = "".join(b.text for b in response.content if b.type == "text")
+            if response.stop_reason == "max_tokens":
+                # A tool call cut off mid-generation can't run, but the API
+                # requires a result for every tool_use in the history.
+                cut_off = [b for b in response.content if b.type == "tool_use"]
+                if cut_off:
+                    self.messages.append(
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "tool_result",
+                                    "tool_use_id": b.id,
+                                    "content": "Not run: the response hit max_tokens.",
+                                    "is_error": True,
+                                }
+                                for b in cut_off
+                            ],
+                        }
+                    )
+                turn.text += "\n\n[answer truncated: hit max_tokens]"
             break
         else:
             turn.hit_step_limit = True
@@ -311,9 +331,6 @@ class SupportAgent:
                 f"I wasn't able to finish within {self.max_steps} steps. "
                 "Could you rephrase or narrow the question?"
             )
-
-        turn.latency_ms = (time.perf_counter() - start) * 1000
-        return turn
 
     def _call_model(self):
         return self.client.beta.messages.create(
@@ -324,7 +341,11 @@ class SupportAgent:
             messages=self.messages,
             output_config={"effort": EFFORT},
             betas=[FALLBACK_BETA],
-            extra_body=FALLBACK_BODY,
+            fallbacks="default",
+            # Each step resends the system prompt, tools, and growing history.
+            # Automatic prompt caching bills the repeated prefix at the
+            # cache-read rate instead of full price.
+            cache_control={"type": "ephemeral"},
         )
 
     def _run_tool(self, block, turn: AgentTurn) -> dict[str, Any]:
@@ -376,8 +397,3 @@ class SupportAgent:
             ticket_id = self.tickets.create(**call.input)
             return f"Created ticket {ticket_id}."
         raise ValueError(f"unknown tool {call.name!r}")
-
-
-def _cost(model: str, usage) -> float:
-    in_price, out_price = PRICES.get(model, PRICES[MODEL])
-    return (usage.input_tokens * in_price + usage.output_tokens * out_price) / 1_000_000

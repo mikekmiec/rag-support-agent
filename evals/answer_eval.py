@@ -49,23 +49,17 @@ from evals.common import (
     percentile,
 )
 from rag.backends import BACKENDS
+from rag.client import make_client
 from rag.generate import MODEL as ANSWER_MODEL
 from rag.generate import build_user_prompt, generate_answer
 from rag.pipeline import RAGPipeline, build_pipeline
+from rag.pricing import cost_usd
 
 # A cheaper model than the one being graded is standard for judges; grading
 # an answer against a reference and a few excerpts is a much easier task
 # than producing it.
 JUDGE_MODEL = "claude-sonnet-5-5"
 JUDGE_EFFORT = "medium"
-
-# USD per million tokens (input, output), for the cost report. Update if
-# pricing changes; models not listed fall back to the answer model's price.
-PRICES = {
-    "claude-opus-5-5": (4.00, 20.00),
-    "claude-sonnet-5-5": (2.00, 10.00),
-    "claude-opus-4-8": (5.00, 25.00),
-}
 
 # Rough per-question token usage for the up-front estimate only (the
 # report uses the real numbers the API returns).
@@ -122,11 +116,7 @@ class QuestionResult:
     judge_reasoning: str
     latency_ms: float
     cost_usd: float
-
-
-def cost(model: str, input_tokens: int, output_tokens: int) -> float:
-    in_price, out_price = PRICES.get(model, PRICES[ANSWER_MODEL])
-    return (input_tokens * in_price + output_tokens * out_price) / 1_000_000
+    error: str | None = None  # set when the question couldn't be run at all
 
 
 def judge(client: Anthropic, item: EvalItem, context: str, answer: str) -> tuple[Verdict, float]:
@@ -144,7 +134,7 @@ def judge(client: Anthropic, item: EvalItem, context: str, answer: str) -> tuple
         output_config={"effort": JUDGE_EFFORT},
         output_format=Verdict,
     )
-    spent = cost(JUDGE_MODEL, response.usage.input_tokens, response.usage.output_tokens)
+    spent = cost_usd(JUDGE_MODEL, response.usage.input_tokens, response.usage.output_tokens)
     if response.parsed_output is None:
         # Refusal or truncation: record it rather than crash the run.
         verdict = Verdict(
@@ -185,11 +175,41 @@ def run_one(client: Anthropic, pipeline: RAGPipeline, item: EvalItem) -> Questio
         unsupported_claims=verdict.unsupported_claims,
         judge_reasoning=verdict.reasoning,
         latency_ms=latency_ms,
-        cost_usd=cost(answer.model, answer.input_tokens, answer.output_tokens) + judge_cost,
+        cost_usd=cost_usd(answer.model, answer.input_tokens, answer.output_tokens) + judge_cost,
     )
 
 
-def summarize(results: list[QuestionResult]) -> dict[str, float]:
+def run_one_safely(client: Anthropic, pipeline: RAGPipeline, item: EvalItem) -> QuestionResult:
+    """Like run_one, but an API error becomes an error row instead of
+    aborting the whole run (and discarding results already paid for)."""
+    try:
+        return run_one(client, pipeline, item)
+    except Exception as e:  # noqa: BLE001 - recorded and reported, not swallowed
+        return QuestionResult(
+            id=item.id,
+            category=item.category,
+            answerable=item.answerable,
+            question=item.question,
+            retrieved=[],
+            answer="",
+            answer_model="",
+            citations=[],
+            citations_valid=False,
+            cited_anything=False,
+            correctness="error",
+            faithful=False,
+            unsupported_claims=[],
+            judge_reasoning="",
+            latency_ms=0.0,
+            cost_usd=0.0,
+            error=f"{type(e).__name__}: {e}",
+        )
+
+
+def summarize(all_results: list[QuestionResult]) -> dict[str, float]:
+    # Errored questions are excluded from the quality rates and counted
+    # separately, so an outage can't masquerade as a model regression.
+    results = [r for r in all_results if r.error is None]
     answerable = [r for r in results if r.answerable]
     off_corpus = [r for r in results if not r.answerable]
     answered = [r for r in results if r.correctness != "abstained"]
@@ -209,12 +229,16 @@ def summarize(results: list[QuestionResult]) -> dict[str, float]:
         "latency_p50_ms": percentile(latencies, 50),
         "latency_p95_ms": percentile(latencies, 95),
         "total_cost_usd": sum(r.cost_usd for r in results),
+        "errors": float(len(all_results) - len(results)),
     }
 
 
 def print_report(label: str, results: list[QuestionResult], summary: dict[str, float]) -> None:
     print(f"\nPer question ({label})")
     for r in results:
+        if r.error:
+            print(f"  {r.id:<28} ERROR {r.error}")
+            continue
         flags = []
         if not r.faithful:
             flags.append("UNFAITHFUL")
@@ -242,6 +266,9 @@ def print_report(label: str, results: list[QuestionResult], summary: dict[str, f
         f"{summary['latency_p95_ms']:.0f} ms"
     )
     print(f"  total cost                   ${summary['total_cost_usd']:.3f}")
+    if summary["errors"]:
+        print(f"  ERRORS                       {summary['errors']:.0f} questions failed to run")
+        print("                               (excluded from the rates above)")
 
 
 def main() -> None:
@@ -265,17 +292,17 @@ def main() -> None:
         items = items[: args.limit]
 
     estimate = len(items) * (
-        cost(ANSWER_MODEL, *EST_ANSWER_TOKENS) + cost(JUDGE_MODEL, *EST_JUDGE_TOKENS)
+        cost_usd(ANSWER_MODEL, *EST_ANSWER_TOKENS) + cost_usd(JUDGE_MODEL, *EST_JUDGE_TOKENS)
     )
     print(f"{len(items)} questions x 2 API calls ({ANSWER_MODEL} answers, {JUDGE_MODEL} judges)")
     print(f"Estimated cost: ~${estimate:.2f}")
     if not args.yes and input("Continue? [y/N] ").strip().lower() != "y":
         raise SystemExit("Aborted.")
 
+    client = make_client()  # before building the index: fail fast without a key
     pipeline = build_pipeline(backend=args.backend, rerank=args.rerank)
-    client = Anthropic()
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
-        results = list(pool.map(lambda item: run_one(client, pipeline, item), items))
+        results = list(pool.map(lambda item: run_one_safely(client, pipeline, item), items))
 
     summary = summarize(results)
     print_report(pipeline.label, results, summary)

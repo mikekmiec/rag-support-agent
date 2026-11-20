@@ -26,6 +26,7 @@ runner, so every orchestration concern is visible in one place:
 from __future__ import annotations
 
 import json
+import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -148,6 +149,24 @@ ACTION_TOOLS = frozenset({"create_support_ticket"})
 # --- tool implementations -------------------------------------------------------
 
 
+SEVERITIES = ("low", "normal", "high", "critical")
+MAX_SUBJECT_CHARS = 200
+MAX_DESCRIPTION_CHARS = 5000
+
+_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+
+
+def printable(text: str) -> str:
+    """Strip terminal control characters (keeping newlines and tabs).
+
+    Model output and tool inputs are untrusted text. An ANSI escape
+    sequence in them could clear the screen, recolor, or overwrite lines,
+    for example to hide part of a ticket in the approval prompt. Apply
+    this to anything printed to a terminal.
+    """
+    return _CONTROL_CHARS.sub("", text)
+
+
 class TicketStore:
     """Appends tickets to a JSONL file: a stand-in for a real ticketing API."""
 
@@ -155,6 +174,15 @@ class TicketStore:
         self.path = path
 
     def create(self, subject: str, severity: str, description: str) -> str:
+        # Validate here as well as in the tool schema: strict mode
+        # guarantees the input's shape, not its size, and this method is
+        # the boundary a real ticketing API would enforce.
+        if severity not in SEVERITIES:
+            raise ValueError(f"severity must be one of {SEVERITIES}")
+        if not subject.strip() or len(subject) > MAX_SUBJECT_CHARS:
+            raise ValueError(f"subject must be 1-{MAX_SUBJECT_CHARS} characters")
+        if len(description) > MAX_DESCRIPTION_CHARS:
+            raise ValueError(f"description must be at most {MAX_DESCRIPTION_CHARS} characters")
         ticket_id = f"NIM-{len(self.all()) + 1:04d}"
         record = {
             "id": ticket_id,

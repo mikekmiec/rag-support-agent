@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from rag.agent import SupportAgent, TicketStore, tool_definitions
+from rag.agent import SupportAgent, TicketStore, printable, tool_definitions
 from rag.generate import REFUSAL_MESSAGE
 from rag.index import TfidfIndex
 from rag.ingest import Chunk
@@ -228,3 +228,24 @@ def test_tool_schemas_are_strict_and_list_documents():
         "pricing",
         "security",
     ]
+
+
+@pytest.mark.parametrize(
+    "kwargs,error",
+    [
+        ({"subject": "s", "severity": "urgent", "description": "d"}, "severity"),
+        ({"subject": "", "severity": "low", "description": "d"}, "subject"),
+        ({"subject": "x" * 201, "severity": "low", "description": "d"}, "subject"),
+        ({"subject": "s", "severity": "low", "description": "x" * 5001}, "description"),
+    ],
+)
+def test_ticket_store_rejects_invalid_input(tmp_path, kwargs, error):
+    store = TicketStore(tmp_path / "t.jsonl")
+    with pytest.raises(ValueError, match=error):
+        store.create(**kwargs)
+    assert store.all() == []
+
+
+def test_printable_strips_terminal_escapes_but_keeps_newlines():
+    hidden = "Subject: refund\x1b[2K\x1b[1A\rSubject: harmless\nline two\t."
+    assert printable(hidden) == "Subject: refund[2K[1ASubject: harmless\nline two\t."

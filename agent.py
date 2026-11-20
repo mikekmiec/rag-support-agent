@@ -20,7 +20,7 @@ from pathlib import Path
 
 from anthropic import Anthropic
 
-from rag.agent import SupportAgent, TicketStore, ToolCall
+from rag.agent import SupportAgent, TicketStore, ToolCall, printable
 from rag.ingest import load_documents
 from rag.pipeline import DOCS_DIR, build_pipeline
 
@@ -35,9 +35,11 @@ def show_tool_call(call: ToolCall) -> None:
 
 
 def confirm_action(call: ToolCall) -> bool:
+    # The values come from the model, so strip control characters: what you
+    # approve has to be exactly what you see.
     print(f"\n  The agent wants to run {call.name}:")
     for key, value in call.input.items():
-        print(f"    {key}: {value}")
+        print(f"    {key}: {printable(str(value))}")
     try:
         return input("  Approve? [y/N] ").strip().lower() == "y"
     except (EOFError, KeyboardInterrupt):
@@ -67,7 +69,7 @@ def main() -> None:
         if not question:
             continue
         turn = agent.ask(question)
-        print(f"\n{turn.text}\n")
+        print(f"\n{printable(turn.text)}\n")
         print(
             f"  [{turn.model_calls} model calls, {len(turn.tool_calls)} tool calls, "
             f"{turn.input_tokens + turn.output_tokens} tokens, ${turn.cost_usd:.4f}, "

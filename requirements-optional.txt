@@ -15,7 +15,7 @@ sentence-transformers>=3.0.0
 
 # RAG_BACKEND=voyage — Voyage AI hosted embeddings. Needs VOYAGE_API_KEY
 # from https://voyage.ai in the environment to actually run.
-voyageai>=0.3.0
+voyageai>=0.6.0
 
 # index_dense.py, index_voyage.py, and rerank.py all import numpy directly
 # for cosine similarity / sigmoid. scikit-learn (in requirements.txt)

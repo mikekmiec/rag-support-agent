@@ -23,8 +23,13 @@ def test_uses_environment_key(monkeypatch, no_credentials):
 
 def test_prompts_with_hidden_input_when_interactive(monkeypatch, no_credentials):
     prompts = []
+
+    def fake_getpass(prompt):
+        prompts.append(prompt)
+        return "fake-typed-key"
+
     monkeypatch.setattr(client_mod.sys.stdin, "isatty", lambda: True, raising=False)
-    monkeypatch.setattr(client_mod.getpass, "getpass", lambda p: prompts.append(p) or "fake-typed-key")
+    monkeypatch.setattr(client_mod.getpass, "getpass", fake_getpass)
     assert client_mod.make_client().api_key == "fake-typed-key"
     assert len(prompts) == 1
 

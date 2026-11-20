@@ -11,7 +11,7 @@
 # reranking) both depend on this — it's the one package needed for either.
 # Pulls in PyTorch: a sizable download (roughly a few hundred MB to ~2GB
 # depending on platform/CPU vs GPU build).
-sentence-transformers>=3.0.0
+sentence-transformers>=6.3.0
 
 # RAG_BACKEND=voyage — Voyage AI hosted embeddings. Needs VOYAGE_API_KEY
 # from https://voyage.ai in the environment to actually run.
